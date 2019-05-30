@@ -76,6 +76,9 @@ class IPRangeACLMiddleware(object):
         if container is None:
             return self.app(env, start_response)
 
+        if env.get('swift.authorize_override', False):
+            return self.app(env, start_response)
+
         container_info = get_container_info(req.environ, self.app,
                 swift_source='IPRangeACLMiddleware')
 
