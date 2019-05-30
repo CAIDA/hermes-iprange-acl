@@ -43,7 +43,12 @@ class IPRangeACLMiddleware(object):
     policy using the 'ipacl-default' metadata field. To deny all access
     attempts until an ACL is added to the container, set this to 'denied'.
     To allow all access attempts until an ACL is added, set this to 'allowed'.
-    Default is to allow access when no ACLs are present.
+    Default is to deny access when no ACLs are present.
+
+    You can additionally configure an IP range that will be allowed access
+    to all containers, regardless of any policy that is attached as metadata
+    by setting the 'always_allow' config option in /etc/swift/proxy-server.conf
+    with your preferred IP range.
 
     Requires: py2-ipaddress, pytricia
     """
@@ -58,6 +63,7 @@ class IPRangeACLMiddleware(object):
 
         self.deny_message = conf.get('deny_message', "Access Denied (IP Range ACL)")
         self.local_ip = socket.gethostbyname(socket.gethostname())
+        self.default_range = conf.get('always_allow', "127.0.0.1")
 
     def __call__(self, env, start_response):
         req = Request(env)
@@ -73,14 +79,19 @@ class IPRangeACLMiddleware(object):
         container_info = get_container_info(req.environ, self.app,
                 swift_source='IPRangeACLMiddleware')
 
-        remote_ip = env['REMOTE_ADDR']
-        self.logger.debug("Remote IP: %(remote_ip)s", {
-                'remote_ip': remote_ip})
+        if 'HTTP_X_REAL_IP' in env:
+            remote_ip = env['HTTP_X_REAL_IP']
+        elif 'REMOTE_ADDR' in env:
+            remote_ip = env['REMOTE_ADDR']
+        else:
+            remote_ip = "unknown"
+
+        #self.logger.debug("Remote IP: %(remote_ip)s", {
+        #        'remote_ip': remote_ip})
 
         meta = container_info['meta']
         allowed = set()
-        default = "allowed"
-
+        default = "denied"
         for k, v in meta.iteritems():
             # Each allowed range must have a unique meta-data key, but
             # the key must begin with 'allowed-iprange-'
@@ -102,21 +113,21 @@ class IPRangeACLMiddleware(object):
         if len(allowed) == 0 and default == "allowed":
             return self.app(env, start_response)
         else:
-            self.logger.debug("Allowed IP ranges: %(range)s",
-                    {'range': allowed})
+            #self.logger.debug("Allowed IP ranges: %(range)s",
+            #        {'range': allowed})
 
             for pref in allowed:
 
                 if ':' in pref:
                     try:
-                        addrcheck = ipaddress.IPv6Network(pref, False)
+                        addrcheck = ipaddress.IPv6Network(unicode(pref), False)
                     except ipaddress.AddressValueError:
                         self.logger.debug("iprange_acl -- skipping invalid IP prefix: %(pref)s", {'pref': pref})
                         continue
                     self.pyt6[pref] = "allowed"
                 else:
                     try:
-                        addrcheck = ipaddress.IPv4Network(pref, False)
+                        addrcheck = ipaddress.IPv4Network(unicode(pref), False)
                     except ipaddress.AddressValueError:
                         self.logger.debug("iprange_acl -- skipping invalid IP prefix: %(pref)s", {'pref': pref})
                         continue
@@ -129,6 +140,25 @@ class IPRangeACLMiddleware(object):
             self.pyt6[self.local_ip] = "allowed"
         else:
             self.pyt[self.local_ip] = "allowed"
+
+        if ':' in self.default_range:
+            try:
+                addrcheck = ipaddress.IPv6Network(unicode(self.default_range), \
+                        False)
+            except ipaddress.AddressValueError:
+                self.logger.debug("Invalid always_allow prefix for IPv6: %s" \
+                        % (self.default_range))
+            else:
+                self.pyt6[self.default_range] = "allowed"
+        else:
+            try:
+                addrcheck = ipaddress.IPv4Network(unicode(self.default_range), \
+                        False)
+            except ipaddress.AddressValueError:
+                self.logger.debug("Invalid always_allow prefix for IPv4: %s" \
+                        % (self.default_range))
+            else:
+                self.pyt[self.default_range] = "allowed"
 
         if ':' in remote_ip:
             status = self.pyt6.get(remote_ip)
