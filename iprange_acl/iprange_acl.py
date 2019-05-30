@@ -22,7 +22,7 @@ import socket
 import pytricia
 import ipaddress
 from swift.proxy.controllers.base import get_container_info
-from swift.common.utils import get_logger
+from swift.common.utils import get_logger, get_remote_client
 from swift.common.swob import Request, Response
 
 class IPRangeACLMiddleware(object):
@@ -79,12 +79,7 @@ class IPRangeACLMiddleware(object):
         container_info = get_container_info(req.environ, self.app,
                 swift_source='IPRangeACLMiddleware')
 
-        if 'HTTP_X_REAL_IP' in env:
-            remote_ip = env['HTTP_X_REAL_IP']
-        elif 'REMOTE_ADDR' in env:
-            remote_ip = env['REMOTE_ADDR']
-        else:
-            remote_ip = "unknown"
+        remote_ip = get_remote_client(req)
 
         #self.logger.debug("Remote IP: %(remote_ip)s", {
         #        'remote_ip': remote_ip})
