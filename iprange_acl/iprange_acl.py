@@ -21,9 +21,12 @@
 import socket
 import pytricia
 import ipaddress
-from swift.proxy.controllers.base import get_container_info
+from swift.proxy.controllers.base import get_container_info, get_account_info
 from swift.common.utils import get_logger, get_remote_client
 from swift.common.swob import Request, Response
+
+deny_meta_change = \
+        "Access Denied (user role does not allow meta-data modification"
 
 class IPRangeACLMiddleware(object):
     """
@@ -65,6 +68,19 @@ class IPRangeACLMiddleware(object):
         self.local_ip = socket.gethostbyname(socket.gethostname())
         self.default_range = conf.get('always_allow', "127.0.0.1")
 
+        # Only users belonging to the following roles will be allowed to
+        # adjust meta-data for accounts or containers (since we use this
+        # meta-data for additional auth control)
+        self.allowed_meta_write_roles = ['admin']
+
+        # Additional meta-data editing roles can be specified using
+        # the 'meta_write_roles' config option
+        other_allowed = conf.get('meta_write_roles', "")
+        for r in other_allowed.split(","):
+            r = r.strip()
+            if len(r) > 0:
+                self.allowed_meta_write_roles.append(r)
+
     def __call__(self, env, start_response):
         req = Request(env)
 
@@ -73,33 +89,68 @@ class IPRangeACLMiddleware(object):
         except ValueError:
             return self.app(env, start_response)
 
-        if container is None:
+        if account is None:
             return self.app(env, start_response)
 
         if env.get('swift.authorize_override', False):
             return self.app(env, start_response)
 
-        container_info = get_container_info(req.environ, self.app,
+        # First, restrict modification of auth meta-data to only users with
+        # the admin role (or roles that have been specially enabled in
+        # the swift config).
+        role = req.environ.get('HTTP_X_ROLE', "unknown")
+        if req.method == "POST" and role not in self.allowed_meta_write_roles:
+            for k,v in req.headers.iteritems():
+                if k.startswith('X-Container-Meta-'):
+                    return Response(status=403, body=deny_meta_change,
+                            request=req)(env, start_response)
+                if k.startswith('X-Account-Meta-'):
+                    return Response(status=403, body=deny_meta_change,
+                            request=req)(env, start_response)
+
+        # Grab the metadata for the account and container
+        if container is not None:
+            container_info = get_container_info(req.environ, self.app,
+                    swift_source='IPRangeACLMiddleware')
+        else:
+            container_info = None
+
+        acc_info = get_account_info(req.environ, self.app,
                 swift_source='IPRangeACLMiddleware')
 
         remote_ip = get_remote_client(req)
 
-        #self.logger.debug("Remote IP: %(remote_ip)s", {
-        #        'remote_ip': remote_ip})
-
-        meta = container_info['meta']
         allowed = set()
         default = "denied"
+
+        # Read any account-level ACLs
+        meta = acc_info['meta']
         for k, v in meta.iteritems():
-            # Each allowed range must have a unique meta-data key, but
-            # the key must begin with 'allowed-iprange-'
-            if k.startswith('allowed-iprange-') and len(v) > 0:
+            if k.startswith("x-account-meta-iprange") and len(v) > 0:
                 allowed.add(v)
 
             # This key is used to set the default access policy in
             # cases where no ACLs are present in the meta-data.
             if k == "ipacl-default":
                 default = v
+
+        # If the request is for a container or object, check for any
+        # container-level ACLs
+        if container_info is not None:
+            meta = container_info['meta']
+            for k, v in meta.iteritems():
+                # Each allowed range must have a unique meta-data key, but
+                # the key must begin with 'allowed-iprange-'
+                if k.startswith('allowed-iprange-') and len(v) > 0:
+                    allowed.add(v)
+
+                # This key is used to set the default access policy in
+                # cases where no ACLs are present in the meta-data.
+
+                # NOTE: Container-level default behaviour will override
+                # account-level defaults.
+                if k == "ipacl-default":
+                    default = v
 
         # XXX Could probably condense this into one tree, but not sure
         # whether Pytricia is OK with mixing IPv4 and IPv6 prefixes.
@@ -111,9 +162,7 @@ class IPRangeACLMiddleware(object):
         if len(allowed) == 0 and default == "allowed":
             return self.app(env, start_response)
         else:
-            #self.logger.debug("Allowed IP ranges: %(range)s",
-            #        {'range': allowed})
-
+            # Build the patricia tree of allowed IP prefixes
             for pref in allowed:
 
                 if ':' in pref:
@@ -139,6 +188,7 @@ class IPRangeACLMiddleware(object):
         else:
             self.pyt[self.local_ip] = "allowed"
 
+        # Add our default allowed IP range to the patricia tree
         if ':' in self.default_range:
             try:
                 addrcheck = ipaddress.IPv6Network(unicode(self.default_range), \
@@ -158,6 +208,7 @@ class IPRangeACLMiddleware(object):
             else:
                 self.pyt[self.default_range] = "allowed"
 
+        # Look up the address of the client in the patricia tree
         if ':' in remote_ip:
             status = self.pyt6.get(remote_ip)
         else:
@@ -166,7 +217,6 @@ class IPRangeACLMiddleware(object):
         if status == "allowed":
             return self.app(env, start_response)
 
-        self.logger.debug("IP %(remote_ip)s denied access to Account %(account)s, Container %(container)s", locals())
         return Response(status=403, body=self.deny_message, request=req)(env,
                 start_response)
 

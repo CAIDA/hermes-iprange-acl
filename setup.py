@@ -4,7 +4,7 @@
 from setuptools import setup, find_packages
 
 setup(name="iprange_acl",
-        version="1.0.0",
+        version="1.0.1",
         description="Swift middleware for controlling access to containers based on IP",
         url="https://github.com/CAIDA/",
         author="Shane Alcock",
