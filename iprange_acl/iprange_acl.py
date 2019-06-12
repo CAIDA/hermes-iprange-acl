@@ -108,7 +108,8 @@ class IPRangeACLMiddleware(object):
 
             if not roles.intersection(self.allowed_meta_write_roles):
                 for k, v in req.headers.iteritems():
-                    if k.startswith('X-Container-Meta-') or k.startswith('X-Account-Meta-'):
+                    if k.startswith('X-Container-Meta-Allowed-Iprange') \
+                            or k.startswith('X-Account-Meta-Allowed-Iprange'):
                         return Response(status=403, body=deny_meta_change,
                                 request=req)(env, start_response)
 
