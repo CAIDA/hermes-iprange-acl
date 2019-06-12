@@ -131,7 +131,7 @@ class IPRangeACLMiddleware(object):
         # Read any account-level ACLs
         meta = acc_info['meta']
         for k, v in meta.iteritems():
-            if k.startswith("x-account-meta-iprange") and len(v) > 0:
+            if k.startswith("allowed-iprange") and len(v) > 0:
                 allowed.add(v)
 
             # This key is used to set the default access policy in

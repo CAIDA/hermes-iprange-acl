@@ -8,13 +8,9 @@ https://wiki.openstack.org/wiki/Customizing_Object_Storage_(Swift)_Middleware
 Extended to allow the specification of IP ranges using an IP prefix.
 Also supports IPv6 ACLs.
 
-For containers, allowed ranges are specified by adding metadata to the
+Allowed ranges are specified by adding metadata to the account or
 container which begins with the string 'allowed-iprange-', e.g.
 allowed-iprange-example=192.168.200.0/24
-
-For accounts, allowed ranges are specified by adding metadata to the account
-which begins with the string 'x-account-meta-iprange', e.g.
-x-account-meta-iprange-example=10.100.0.0/16
 
 For accounts and containers without any allowed range metadata, you can set a
 default policy using the 'ipacl-default' metadata field. To deny all access
@@ -66,8 +62,7 @@ account or container that you want the ACL to apply to. For containers,
 the metadata key must begin with the phrase `allowed-iprange-`, e.g.
 `allowed-iprange-example=192.168.200.0/24`. Multiple prefixes may be specified
 by using multiple metadata entries, but remember that each entry must have a
-unique key. For accounts, the metadata key must begin with the phrase
-`x-account-meta-iprange`.
+unique key.
 
 Note that any accounts or containers with no ACL metadata will default to
 denying anyone access to them, unless the `ipacl-default` metadata field is
