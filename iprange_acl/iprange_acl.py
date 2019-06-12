@@ -66,7 +66,7 @@ class IPRangeACLMiddleware(object):
 
         self.deny_message = conf.get('deny_message', "Access Denied (IP Range ACL)")
         self.local_ip = socket.gethostbyname(socket.gethostname())
-        self.default_range = conf.get('always_allow', "127.0.0.1")
+        self.default_ranges = list_from_csv(conf.get('always_allow', ""))
 
         # Only users belonging to the following roles will be allowed to
         # adjust meta-data for accounts or containers (since we use this
@@ -193,25 +193,26 @@ class IPRangeACLMiddleware(object):
         else:
             self.pyt[self.local_ip] = "allowed"
 
-        # Add our default allowed IP range to the patricia tree
-        if ':' in self.default_range:
-            try:
-                addrcheck = ipaddress.IPv6Network(unicode(self.default_range), \
-                        False)
-            except ipaddress.AddressValueError:
-                self.logger.debug("Invalid always_allow prefix for IPv6: %s" \
-                        % (self.default_range))
+        # Add our default allowed IP ranges to the patricia tree
+        for default_range in self.default_ranges:
+            if ':' in default_range:
+                try:
+                    addrcheck = ipaddress.IPv6Network(unicode(default_range), \
+                            False)
+                except ipaddress.AddressValueError:
+                    self.logger.debug("Invalid always_allow prefix for IPv6: %s" \
+                            % (default_range))
+                else:
+                    self.pyt6[default_range] = "allowed"
             else:
-                self.pyt6[self.default_range] = "allowed"
-        else:
-            try:
-                addrcheck = ipaddress.IPv4Network(unicode(self.default_range), \
-                        False)
-            except ipaddress.AddressValueError:
-                self.logger.debug("Invalid always_allow prefix for IPv4: %s" \
-                        % (self.default_range))
-            else:
-                self.pyt[self.default_range] = "allowed"
+                try:
+                    addrcheck = ipaddress.IPv4Network(unicode(default_range), \
+                            False)
+                except ipaddress.AddressValueError:
+                    self.logger.debug("Invalid always_allow prefix for IPv4: %s" \
+                            % (default_range))
+                else:
+                    self.pyt[default_range] = "allowed"
 
         # Look up the address of the client in the patricia tree
         if ':' in remote_ip:

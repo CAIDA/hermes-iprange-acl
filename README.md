@@ -40,14 +40,14 @@ server configuration file:
 ```
 [filter:iprange_acl]
 use = egg:iprange_acl#iprange_acl
-always_allow = <your org IP range>		# optional
+always_allow = <your org IP ranges>		# optional
 meta_write_roles = role1, role2                 # optional
 ```
 
-The `always_allow` configuration option allows you to specify an IP range
-that is always allowed to access any container, regardless of the ACLs
-specified on that container. This can be used to provide global access to
-users within your organisation, whilst still maintaining a default deny
+The `always_allow` configuration option allows you to specify a comma-separated
+set of IP ranges that are always allowed to access any container, regardless of
+the ACLs specified on that container. This can be used to provide global access
+to users within your organisation, whilst still maintaining a default deny
 unless otherwise specified policy for everyone else.
 
 The `meta_write_roles` configuration option allows you to specify which
