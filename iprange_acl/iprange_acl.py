@@ -22,7 +22,7 @@ import socket
 import pytricia
 import ipaddress
 from swift.proxy.controllers.base import get_container_info, get_account_info
-from swift.common.utils import get_logger, get_remote_client
+from swift.common.utils import get_logger, get_remote_client, list_from_csv
 from swift.common.swob import Request, Response
 
 deny_meta_change = \
@@ -71,15 +71,15 @@ class IPRangeACLMiddleware(object):
         # Only users belonging to the following roles will be allowed to
         # adjust meta-data for accounts or containers (since we use this
         # meta-data for additional auth control)
-        self.allowed_meta_write_roles = ['admin']
+        self.allowed_meta_write_roles = set(['admin'])
 
         # Additional meta-data editing roles can be specified using
         # the 'meta_write_roles' config option
         other_allowed = conf.get('meta_write_roles', "")
-        for r in other_allowed.split(","):
+        for r in list_from_csv(other_allowed):
             r = r.strip()
             if len(r) > 0:
-                self.allowed_meta_write_roles.append(r)
+                self.allowed_meta_write_roles.add(r)
 
     def __call__(self, env, start_response):
         req = Request(env)
@@ -98,15 +98,19 @@ class IPRangeACLMiddleware(object):
         # First, restrict modification of auth meta-data to only users with
         # the admin role (or roles that have been specially enabled in
         # the swift config).
-        role = req.environ.get('HTTP_X_ROLE', "unknown")
-        if req.method == "POST" and role not in self.allowed_meta_write_roles:
-            for k,v in req.headers.iteritems():
-                if k.startswith('X-Container-Meta-'):
-                    return Response(status=403, body=deny_meta_change,
-                            request=req)(env, start_response)
-                if k.startswith('X-Account-Meta-'):
-                    return Response(status=403, body=deny_meta_change,
-                            request=req)(env, start_response)
+        if req.method == "POST":
+            # following code to get roles is borrowed from keystoneauth
+            roles = set()
+            if (env.get('HTTP_X_IDENTITY_STATUS') == 'Confirmed'
+                    or env.get(
+                        'HTTP_X_SERVICE_IDENTITY_STATUS') in (None, 'Confirmed')):
+                roles = set(list_from_csv(env.get('HTTP_X_ROLES', '')))
+
+            if not roles.intersection(self.allowed_meta_write_roles):
+                for k, v in req.headers.iteritems():
+                    if k.startswith('X-Container-Meta-') or k.startswith('X-Account-Meta-'):
+                        return Response(status=403, body=deny_meta_change,
+                                request=req)(env, start_response)
 
         # Grab the metadata for the account and container
         if container is not None:
