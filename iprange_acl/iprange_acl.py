@@ -120,8 +120,13 @@ class IPRangeACLMiddleware(object):
         else:
             container_info = None
 
-        acc_info = get_account_info(req.environ, self.app,
-                swift_source='IPRangeACLMiddleware')
+        try:
+            acc_info = get_account_info(req.environ, self.app,
+                                        swift_source='IPRangeACLMiddleware')
+        except ValueError:
+            # if we can't get account info, then we deny the request
+            return Response(status=403, body="Invalid account",
+                            request=req)(env, start_response)
 
         remote_ip = get_remote_client(req)
 
