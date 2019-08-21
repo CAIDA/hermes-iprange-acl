@@ -114,9 +114,16 @@ class IPRangeACLMiddleware(object):
                                 request=req)(env, start_response)
 
         # Grab the metadata for the account and container
-        if container is not None:
-            container_info = get_container_info(req.environ, self.app,
-                    swift_source='IPRangeACLMiddleware')
+        if container is not None and container != "":
+            try:
+                container_info = \
+                    get_container_info(req.environ, self.app,
+                                       swift_source='IPRangeACLMiddleware')
+            except ValueError:
+                # if we can't get container info, then we deny the request
+                return Response(status=403,
+                                body="Invalid container (%s)" % container,
+                                request=req)(env, start_response)
         else:
             container_info = None
 
@@ -125,7 +132,7 @@ class IPRangeACLMiddleware(object):
                                         swift_source='IPRangeACLMiddleware')
         except ValueError:
             # if we can't get account info, then we deny the request
-            return Response(status=403, body="Invalid account",
+            return Response(status=403, body="Invalid account (%s)" % account,
                             request=req)(env, start_response)
 
         remote_ip = get_remote_client(req)
